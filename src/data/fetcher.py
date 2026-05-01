@@ -8,7 +8,6 @@ Use fetch_all() to get the full merged feature matrix.
 from datetime import datetime, timedelta
 
 import pandas as pd
-import pandas_datareader.data as web
 import yfinance as yf
 
 
@@ -114,16 +113,23 @@ def fetch_us_bonds(period: str = "2y", interval: str = "1d") -> pd.DataFrame:
 
 def fetch_jgb(period: str = "2y") -> pd.DataFrame:
     """
-    Fetch JGB 10Y yield from stooq via pandas-datareader.
+    Fetch JGB 10Y yield directly from stooq CSV endpoint.
     Returns a single-column DataFrame named 'JGB_10Y'.
     """
     start, end = _date_range(period)
-    df = web.DataReader(TICKER_JGB_10Y, "stooq", start=start, end=end)
-    df = df.sort_index()
-    if len(df) == 0:
-        print("[WARN] No JGB data returned from stooq.")
+    url = (
+        f"https://stooq.com/q/d/l/?s={TICKER_JGB_10Y}"
+        f"&d1={start.strftime('%Y%m%d')}&d2={end.strftime('%Y%m%d')}&i=d"
+    )
+    try:
+        df = pd.read_csv(url, parse_dates=["Date"], index_col="Date").sort_index()
+        if len(df) == 0:
+            print("[WARN] No JGB data returned from stooq.")
+            return pd.DataFrame()
+        return df[["Close"]].rename(columns={"Close": "JGB_10Y"})
+    except Exception as e:
+        print(f"[WARN] JGB fetch failed: {e}")
         return pd.DataFrame()
-    return df[["Close"]].rename(columns={"Close": "JGB_10Y"})
 
 
 def fetch_micro(period: str = "2y", interval: str = "1d") -> pd.DataFrame:
