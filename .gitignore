@@ -1,8 +1,8 @@
-# データ（Google Drive で管理）
-data/
+# Data directory (managed via Google Drive — top-level only)
+/data/
 
-# 学習済みモデル（容量が大きいため）
-output/models/
+# Trained models (large files)
+/output/models/
 
 # Python
 __pycache__/
