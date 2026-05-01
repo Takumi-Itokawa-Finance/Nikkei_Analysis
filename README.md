@@ -121,7 +121,9 @@ git commit -m "your message"
 git push origin main
 ```
 
-In Colab, re-run Cell 0 (`git clone`) or use `!git pull` to get the latest changes.
+In Colab, re-run **Step 2** (which runs `git pull`) to pick up the latest changes.
+Note: the notebook cells themselves are cached by Colab — reopen the notebook from GitHub
+if cell-level changes need to take effect.
 
 ---
 
@@ -129,7 +131,7 @@ In Colab, re-run Cell 0 (`git clone`) or use `!git pull` to get the latest chang
 
 | Category | Libraries |
 |----------|-----------|
-| Data fetching | `yfinance`, `pandas-datareader` |
+| Data fetching | `yfinance`, `stooq` (direct CSV for JGB) |
 | Data processing | `pandas`, `numpy` |
 | Technical indicators | `pandas-ta` |
 | Statistical analysis | `statsmodels`, `scipy` |
@@ -163,9 +165,146 @@ Data fetching
 
 ---
 
+## How to Interpret Results
+
+### 02 — Correlation & Statistical Analysis
+
+#### Pearson Correlation (log returns)
+| Range | Interpretation |
+|-------|----------------|
+| \|r\| > 0.7 | Strong linear relationship |
+| 0.3 < \|r\| < 0.7 | Moderate — worth investigating |
+| \|r\| < 0.3 | Weak — likely not useful alone |
+
+> Computed on **log returns**, not price levels, to avoid spurious correlation from shared trends.
+
+#### Lag Correlation (CCF)
+- Peak at **negative lag** (e.g. lag −1): the indicator leads Nikkei → potentially actionable for prediction
+- Peak at **positive lag**: the indicator lags Nikkei → reactive, not useful for forecasting
+- Practical focus: lag −1 and −2 (data available before next Japan open)
+
+#### Rolling Correlation (60-day window)
+- Stable over time → reliable feature
+- Correlation flipping sign during crises → use with caution; consider regime-aware models
+
+#### Mutual Information
+- 0 = no dependency (linear or non-linear)
+- Higher = stronger dependency
+- If MI >> |Pearson r|: non-linear relationship exists that Ridge will miss (use XGBoost)
+
+#### OLS Regression + VIF
+| Metric | Threshold | Action |
+|--------|-----------|--------|
+| p-value | < 0.05 | Statistically significant coefficient |
+| R² | higher = better | Fraction of variance explained |
+| VIF | > 10 | Severe multicollinearity — drop one of the correlated features |
+| VIF | 5–10 | Moderate concern — monitor |
+
+#### Granger Causality
+| p-value | Interpretation |
+|---------|----------------|
+| < 0.05 | Past values of X improve prediction of Nikkei (beyond Nikkei's own past) |
+| < 0.01 | Strong predictive evidence |
+| ≥ 0.05 | No significant Granger causality |
+
+> Focus on **lag 1** results — these are most actionable for next-day prediction.
+
+#### Cointegration
+- Engle–Granger p < 0.05: the pair shares a long-run equilibrium → mean-reversion strategies may apply
+- Johansen rank > 0: at least one cointegrating relationship among the multivariate set
+
+#### VAR Impulse Response
+- Positive IRF at lag 1: a shock in X leads to a same-direction move in Nikkei next day
+- Sign and magnitude decay after a few lags → short-lived vs persistent effects
+
+#### PCA
+- **PC1** typically captures market beta (all assets rising/falling together)
+- **PC2** often captures risk-off dynamics (equities down, bonds/JPY up)
+- Cumulative explained variance > 80% with few PCs → feature set is highly redundant
+
+---
+
+### 03 — Technical Indicators
+
+#### RSI (Relative Strength Index, 0–100)
+| Level | Signal |
+|-------|--------|
+| > 70 | Overbought — potential downward reversal |
+| 50–70 | Bullish momentum |
+| 30–50 | Bearish momentum |
+| < 30 | Oversold — potential upward reversal |
+
+#### Bollinger Bands
+| Metric | Interpretation |
+|--------|----------------|
+| %B > 1.0 | Price above upper band — stretched to the upside |
+| %B = 0.5 | Price at mid band (20-day SMA) |
+| %B < 0.0 | Price below lower band — stretched to the downside |
+| BB Width increasing | Volatility expanding (often precedes a large move) |
+| BB Width contracting | Volatility compressing (squeeze — breakout may follow) |
+
+#### MACD Histogram
+| Value | Interpretation |
+|-------|----------------|
+| Positive and growing | Bullish momentum strengthening |
+| Positive and shrinking | Bullish momentum fading |
+| Negative and shrinking (toward 0) | Bearish momentum fading — potential reversal |
+| Negative and growing (more negative) | Bearish momentum strengthening |
+
+#### Stochastic Oscillator (%K, 0–100)
+| Level | Signal |
+|-------|--------|
+| %K > 80 | Overbought |
+| %K < 20 | Oversold |
+| %K crosses above %D | Bullish signal |
+| %K crosses below %D | Bearish signal |
+
+#### ATR % (ATR / Close × 100)
+- Low ATR% (< 0.5%): quiet, low-volatility regime
+- High ATR% (> 1.5%): elevated volatility — model predictions are less reliable; position sizing should be reduced
+
+#### Volume Ratio (Volume / 20-day avg)
+| Ratio | Interpretation |
+|-------|----------------|
+| > 1.5 | High conviction — move more likely to continue |
+| 0.8–1.2 | Normal |
+| < 0.5 | Low participation — move may lack follow-through |
+
+---
+
+### 04 — Model Evaluation
+
+#### RMSE
+- Measured in log-return units (e.g. 0.008 ≈ 0.8% daily error)
+- Compare against the **naive baseline RMSE** (always predicting 0): if your model's RMSE is similar, it adds no value
+- Lower is better, but RMSE alone does not indicate profitability
+
+#### Directional Accuracy
+| Value | Interpretation |
+|-------|----------------|
+| 50% | No better than random |
+| 52–54% | Modest edge — potentially profitable with low transaction costs |
+| > 55% | Strong signal |
+
+> In practice, 52%+ sustained over the test period is considered meaningful for daily equity prediction.
+
+#### Sharpe Ratio (annualised, long/short signal strategy)
+| Value | Interpretation |
+|-------|----------------|
+| < 0 | Strategy loses money — model's direction calls are counterproductive |
+| 0–0.5 | Marginally positive |
+| 0.5–1.0 | Acceptable |
+| > 1.0 | Good risk-adjusted return |
+| > 2.0 | Excellent (uncommon for pure technical signals) |
+
+> These Sharpe figures assume **no transaction costs**. Add at least 0.05–0.1% per round-trip for a realistic estimate.
+
+---
+
 ## Evaluation Metrics
 
-- MAE (Mean Absolute Error)
-- RMSE (Root Mean Squared Error)
-- MAPE (Mean Absolute Percentage Error)
-- Directional accuracy (correct next-day up/down prediction rate)
+| Metric | Formula | Notes |
+|--------|---------|-------|
+| RMSE | √mean((y − ŷ)²) | Scale: log-return units |
+| Directional accuracy | mean(sign(ŷ) == sign(y)) | 50% = random baseline |
+| Sharpe ratio | mean(r) / std(r) × √252 | Annualised; r = signal × actual return |
