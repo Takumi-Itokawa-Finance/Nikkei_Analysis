@@ -1,0 +1,21 @@
+# データ（Google Drive で管理）
+data/
+
+# 学習済みモデル（容量が大きいため）
+output/models/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+venv/
+.venv/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# OS
+.DS_Store
+Thumbs.db
