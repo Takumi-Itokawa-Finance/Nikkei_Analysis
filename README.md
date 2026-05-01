@@ -1,100 +1,147 @@
-# Nikkei 225 終値予測プロジェクト
+# Nikkei 225 Closing Price Prediction
 
-日経225の終値予測を目的とした分析リポジトリです。マクロ・ミクロのファンダメンタル指標とテクニカル指標を組み合わせ、統計モデルおよび機械学習モデルによる予測を行います。
+A repository for predicting the Nikkei 225 closing price using macro/micro fundamental indicators and technical analysis.
 
 ---
 
-## 分析概要
+## Analysis Overview
 
-### ファンダメンタル分析
+### Fundamental Analysis
 
-**マクロ指標**
-- 日経225先物
-- 為替（USD/JPY、EUR/JPY など）
-- コモディティ（原油、金など）
-- 米国株指数（S&P 500、NASDAQ、ダウ平均）
-- 債券利回り（米10年債、日本国債）
+**Macro Indicators**
+- Nikkei 225 Futures
+- FX rates (USD/JPY, EUR/JPY, etc.)
+- Commodities (crude oil, gold, etc.)
+- US indices (S&P 500, NASDAQ, Dow Jones)
+- Bond yields (US Treasuries, JGB)
 
-**ミクロ指標（主要構成銘柄）**
-- ソフトバンクグループ（9984）
-- ファーストリテイリング（9983）
-- その他 Nikkei 225 高ウェイト銘柄
+**Micro Indicators (major Nikkei 225 constituents)**
+- SoftBank Group (9984)
+- Fast Retailing (9983)
+- Other high-weight Nikkei 225 stocks
 
-### テクニカル分析
+### Technical Analysis
 
-- 移動平均線（SMA / EMA）
-- ボリンジャーバンド
+- Moving averages (SMA / EMA)
+- Bollinger Bands
 - RSI / MACD
-- 売買高・出来高分析
+- Volume analysis
 
-### 統計・相関分析
+### Statistical & Correlation Analysis
 
-| 手法 | 目的 |
-|------|------|
-| ピアソン相関係数 | 各指標と終値の線形関係の把握 |
-| ラグ相関分析 | 先行指標の特定（例：米国株の翌日への影響） |
-| 重回帰分析（OLS） | 複数指標を同時投入した終値への影響量の推定 |
-| VIF（分散膨張係数）分析 | 説明変数間の多重共線性の診断 |
-| グレンジャー因果性検定 | 各指標が Nikkei 225 を統計的に予測するかの検証 |
-| VAR（ベクトル自己回帰）モデル | 複数時系列間の相互依存関係のモデル化 |
-| 主成分分析（PCA） | 多次元指標の次元圧縮と特徴量選択 |
+| Method | Purpose |
+|--------|---------|
+| Pearson correlation | Linear relationship between each indicator and closing price |
+| Lag correlation | Identifying leading indicators (e.g. US market impact on next-day Nikkei) |
+| Multiple regression (OLS) | Estimating effect size of multiple indicators simultaneously |
+| VIF analysis | Diagnosing multicollinearity among predictors |
+| Granger causality test | Testing whether indicators statistically predict Nikkei 225 |
+| VAR model | Modeling interdependencies among multiple time series |
+| PCA | Dimensionality reduction and feature selection |
 
-### 予測モデル
+### Prediction Models
 
-| モデル | 特徴 |
-|--------|------|
-| ARIMA / SARIMA | 時系列の自己回帰・季節性モデリング |
-| 重回帰・Ridge / Lasso | 線形ベースラインと正則化による特徴量選択 |
-| Random Forest / XGBoost / LightGBM | 非線形関係と特徴量重要度の把握 |
-| LSTM | 時系列パターンの深層学習 |
+| Model | Notes |
+|-------|-------|
+| ARIMA / SARIMA | Autoregressive and seasonal time series modeling |
+| Ridge / Lasso regression | Linear baseline with regularization-based feature selection |
+| Random Forest / XGBoost / LightGBM | Non-linear relationships and feature importance |
+| LSTM | Deep learning for sequential patterns |
 
 ---
 
-## ディレクトリ構成
+## Directory Structure
 
 ```
 Nikkei_Analysis/
-├── data/
-│   ├── raw/               # 取得した生データ（変更不可）
-│   └── processed/         # 前処理・特徴量エンジニアリング済みデータ
-├── notebooks/             # 探索的分析・可視化（.ipynb）
-│   ├── 01_eda.ipynb           # 探索的データ分析
-│   ├── 02_correlation.ipynb   # 相関・回帰分析
-│   ├── 03_technical.ipynb     # テクニカル指標の計算・可視化
-│   └── 04_modeling.ipynb      # モデル学習・評価
-├── src/                   # 再利用可能な関数・モジュール
-│   ├── data/              # データ取得・読み込み
-│   ├── features/          # 特徴量エンジニアリング（テクニカル指標など）
-│   ├── models/            # モデル定義・学習・推論
-│   └── visualization/     # グラフ描画ユーティリティ
-├── output/                # 分析結果の出力先
-│   ├── figures/           # グラフ・チャート
-│   ├── models/            # 学習済みモデルファイル
-│   └── reports/           # 評価レポート・予測結果 CSV
+├── data/                      # Managed via Google Drive (not in git)
+│   ├── raw/                   # Raw data as fetched (read-only)
+│   └── processed/             # Cleaned and feature-engineered data
+├── notebooks/                 # Exploratory analysis (.ipynb)
+│   ├── 01_data_exploration.ipynb
+│   ├── 02_correlation.ipynb
+│   ├── 03_technical.ipynb
+│   └── 04_modeling.ipynb
+├── src/                       # Reusable modules
+│   ├── data/                  # Data fetching and loading
+│   ├── features/              # Feature engineering (technical indicators, etc.)
+│   ├── models/                # Model definitions, training, inference
+│   └── visualization/         # Plotting utilities
+├── output/                    # Analysis outputs
+│   ├── figures/               # Charts and plots
+│   ├── models/                # Saved model files (not in git)
+│   └── reports/               # Evaluation reports and prediction CSVs
 ├── requirements.txt
 └── README.md
 ```
 
+---
+
+## Workflow & Operations
+
+### Development Flow
+
+```
+Local (edit notebooks / src)
+    └─► git push to GitHub
+            └─► Google Colab (pull & run)
+```
+
+### Running on Google Colab
+
+1. Open [Google Colab](https://colab.research.google.com/)
+2. `File` → `Open notebook` → `GitHub` tab
+3. Enter `https://github.com/Takumi-Itokawa-Finance/Nikkei_Analysis`
+4. Select the target notebook and open it
+5. Run **Cell 0** (environment setup) — this will:
+   - `git clone` the repository to `/content/Nikkei_Analysis/`
+   - Mount Google Drive and link `data/` for persistence
+   - Install required libraries
+
+### Data Persistence
+
+`data/` is excluded from git and stored in Google Drive:
+
+```
+MyDrive/
+└── Nikkei_Analysis/
+    └── data/
+        ├── raw/
+        └── processed/
+```
+
+The setup cell in each notebook creates this structure automatically on first run.
+
+### Updating Code
+
+```bash
+# After editing locally
+git add .
+git commit -m "your message"
+git push origin main
+```
+
+In Colab, re-run Cell 0 (`git clone`) or use `!git pull` to get the latest changes.
 
 ---
 
-## 技術スタック
+## Tech Stack
 
-| カテゴリ | ライブラリ |
+| Category | Libraries |
 |----------|-----------|
-| データ取得 | `yfinance`, `pandas-datareader` |
-| データ処理 | `pandas`, `numpy` |
-| テクニカル指標 | `ta`, `pandas-ta` |
-| 統計分析 | `statsmodels`, `scipy` |
-| 可視化 | `matplotlib`, `seaborn`, `plotly` |
-| 機械学習 | `scikit-learn`, `xgboost`, `lightgbm` |
-| 時系列モデル | `statsmodels`（ARIMA / VAR） |
-| 深層学習 | `tensorflow` / `pytorch` |
-| 特徴量重要度 | `shap` |
+| Data fetching | `yfinance`, `pandas-datareader` |
+| Data processing | `pandas`, `numpy` |
+| Technical indicators | `pandas-ta` |
+| Statistical analysis | `statsmodels`, `scipy` |
+| Visualization | `matplotlib`, `seaborn`, `plotly` |
+| Machine learning | `scikit-learn`, `xgboost`, `lightgbm` |
+| Time series models | `statsmodels` (ARIMA / VAR) |
+| Deep learning | `tensorflow` / `pytorch` |
+| Feature importance | `shap` |
 
 ---
 
-## セットアップ
+## Setup (local)
 
 ```bash
 git clone https://github.com/Takumi-Itokawa-Finance/Nikkei_Analysis.git
@@ -104,21 +151,21 @@ pip install -r requirements.txt
 
 ---
 
-## 分析フロー
+## Analysis Pipeline
 
 ```
-データ取得
-    └─► 前処理・特徴量エンジニアリング
-            └─► 相関・回帰分析（重回帰 / グレンジャー検定 / VAR）
-                    └─► 予測モデル学習（線形 / 勾配ブースティング / LSTM）
-                            └─► 評価・バックテスト → output/
+Data fetching
+    └─► Preprocessing & feature engineering
+            └─► Correlation & regression analysis (OLS / Granger / VAR)
+                    └─► Model training (linear / boosting / LSTM)
+                            └─► Evaluation & backtesting → output/
 ```
 
 ---
 
-## 評価指標
+## Evaluation Metrics
 
-- MAE（平均絶対誤差）
-- RMSE（二乗平均平方根誤差）
-- MAPE（平均絶対パーセント誤差）
-- 方向性精度（翌日の上昇 / 下降の的中率）
+- MAE (Mean Absolute Error)
+- RMSE (Root Mean Squared Error)
+- MAPE (Mean Absolute Percentage Error)
+- Directional accuracy (correct next-day up/down prediction rate)
