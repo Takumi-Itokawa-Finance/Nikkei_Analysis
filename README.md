@@ -1,149 +1,712 @@
+# Nikkei 225 終値予測プロジェクト
 # Nikkei 225 Closing Price Prediction
 
-A repository for predicting the Nikkei 225 closing price using macro/micro fundamental indicators and technical analysis.
+日経平均株価の終値をマクロ指標・ADR・テクニカル指標・統計モデル・機械学習を組み合わせて予測するプロジェクトです。各ノートブックは独立して実行可能で、それぞれ異なる分析アプローチを探索します。
 
 ---
 
-## Analysis Overview
-
-### Fundamental Analysis
-
-**Macro Indicators**
-- Nikkei 225 Futures
-- FX rates (USD/JPY, EUR/JPY, etc.)
-- Commodities (crude oil, gold, etc.)
-- US indices (S&P 500, NASDAQ, Dow Jones)
-- Bond yields (US Treasuries, JGB)
-
-**Micro Indicators (major Nikkei 225 constituents)**
-- SoftBank Group (9984)
-- Fast Retailing (9983)
-- Other high-weight Nikkei 225 stocks
-
-### Technical Analysis
-
-- Moving averages (SMA / EMA)
-- Bollinger Bands
-- RSI / MACD
-- Volume analysis
-
-### Statistical & Correlation Analysis
-
-| Method | Purpose |
-|--------|---------|
-| Pearson correlation | Linear relationship between each indicator and closing price |
-| Lag correlation | Identifying leading indicators (e.g. US market impact on next-day Nikkei) |
-| Multiple regression (OLS) | Estimating effect size of multiple indicators simultaneously |
-| VIF analysis | Diagnosing multicollinearity among predictors |
-| Granger causality test | Testing whether indicators statistically predict Nikkei 225 |
-| VAR model | Modeling interdependencies among multiple time series |
-| PCA | Dimensionality reduction and feature selection |
-
-### Prediction Models
-
-| Model | Notes |
-|-------|-------|
-| ARIMA / SARIMA | Autoregressive and seasonal time series modeling |
-| Ridge / Lasso regression | Linear baseline with regularization-based feature selection |
-| Random Forest / XGBoost / LightGBM | Non-linear relationships and feature importance |
-| LSTM | Deep learning for sequential patterns |
-
----
-
-## Directory Structure
+## ディレクトリ構成
 
 ```
 Nikkei_Analysis/
-├── data/                      # Managed via Google Drive (not in git)
-│   ├── raw/                   # Raw data as fetched (read-only)
-│   └── processed/             # Cleaned and feature-engineered data
-├── notebooks/                 # Exploratory analysis (.ipynb)
-│   ├── 01_data_exploration.ipynb
-│   ├── 02_correlation.ipynb
-│   ├── 03_technical.ipynb
-│   └── 04_modeling.ipynb
-├── src/                       # Reusable modules
-│   ├── data/                  # Data fetching and loading
-│   ├── features/              # Feature engineering (technical indicators, etc.)
-│   ├── models/                # Model definitions, training, inference
-│   └── visualization/         # Plotting utilities
-├── output/                    # Analysis outputs
-│   ├── figures/               # Charts and plots
-│   ├── models/                # Saved model files (not in git)
-│   └── reports/               # Evaluation reports and prediction CSVs
-├── requirements.txt
-└── README.md
+├── notebooks/
+│   ├── 01_data_exploration.ipynb      # データソースの確認と前処理
+│   ├── 02_correlation.ipynb           # 統計的関係性の総合分析
+│   ├── 03_technical.ipynb             # テクニカル指標の計算と特徴量化
+│   ├── 04_modeling.ipynb              # 機械学習モデルの訓練・評価
+│   ├── 05_fourier.ipynb               # フーリエ解析（周期性の探索）
+│   ├── 06_adr_prediction.ipynb        # ADR騰落率による当日予測
+│   ├── 07_adr_coefficients.ipynb      # OLS係数モデルによるウェイト最適化
+│   └── 08_close_prediction.ipynb      # 統合モデル：終値予測と予測区間
+├── src/
+│   ├── data/fetcher.py                # データ取得モジュール
+│   └── features/technical.py         # テクニカル指標計算モジュール
+├── scripts/                           # ノートブック実行用スクリプト
+├── data/                              # Google Drive 管理（git管理外）
+│   ├── raw/                           # 取得済み生データ
+│   └── processed/                     # 特徴量エンジニアリング後のデータ
+└── output/
+    ├── figures/                       # 各ノートブックが出力するグラフ
+    ├── models/                        # 学習済みモデル（git管理外）
+    └── reports/                       # 特徴量ランキング等のCSV
 ```
 
 ---
 
-## Workflow & Operations
+## ノートブック詳細
 
-### Development Flow
+---
+
+### 01 — データ探索 / Data Exploration
+
+**何をするか**
+
+予測モデルを構築する前に、すべてのデータソースが正しく取得できるか、欠損値の程度はどのくらいかを網羅的に確認します。後続ノートブックの「データは存在する」という前提を担保する唯一の情報源です。
+
+**対象データ**
+
+| カテゴリ | 指標 | ソース |
+|----------|------|--------|
+| 予測ターゲット | 日経225 | yfinance `^N225` |
+| マクロ：株価指数 | 日経先物 / S&P500 / NASDAQ / ダウ / VIX | yfinance |
+| マクロ：為替 | USD/JPY / EUR/JPY / GBP/JPY / CNY/JPY | yfinance |
+| マクロ：商品 | WTI原油 / 金 / 銀 / 銅 | yfinance |
+| マクロ：金利 | 米国債2Y/10Y/30Y | yfinance |
+| マクロ：金利 | 日本国債10年 | stooq CSV |
+| ミクロ | ファーストリテイリング・ソフトバンクG・東京エレクトロン等 | yfinance |
+
+**出力**
+
+- `data/raw/close_all.csv` — 全ティッカーの終値を1枚にマージしたマスターデータ
+- データ可用性サマリー表（行数・欠損率・期間）
+
+---
+
+### 02 — 相関・統計解析 / Correlation & Statistical Analysis
+
+**何をするか**
+
+日経225と各マクロ・ミクロ指標の間に「どの程度・どんな種類の・いつ現れる」関係があるかを、9種類の統計手法で多角的に定量化します。結果を総合して特徴量ランキングを作成し、後続のモデリングで使う変数を絞り込みます。
+
+---
+
+#### 手法1：ピアソン相関 (Pearson Correlation)
+
+**手法の説明**
+
+2変数間の線形な共変関係を−1〜+1で表す最も基本的な相関係数です。価格水準（レベル）ではなく**対数リターン**に適用します。
+
+**なぜこの手法を選ぶか**
+
+価格水準は長期的な共通トレンドを持つため、そのまま相関を取ると「偽相関（spurious correlation）」が生じます。対数リターンに変換することでトレンドを除去し、日々の変動同士の純粋な関係を測ります。
+
+**結果の解釈**
+
+| |r| の範囲 | 意味 |
+|-------------|------|
+| > 0.7 | 強い線形関係 — ほぼ同時に同方向に動く |
+| 0.3–0.7 | 中程度 — 追加調査の価値あり |
+| < 0.3 | 弱い — 単独では予測力が低い可能性が高い |
+
+正の相関 = 日経と同方向、負の相関 = 逆方向に動く傾向。VIXは通常「恐怖指数」として日経と負の相関を持ちます。
+
+---
+
+#### 手法2：ラグ相関 / 交差相関関数 (CCF: Cross-Correlation Function)
+
+**手法の説明**
+
+指標を1〜10日ずらしたときの相関を計算し、「どの指標が日経より何日早く動くか（先行指標か）」を特定します。
+
+**なぜこの手法を選ぶか**
+
+予測モデルで使える特徴量は「予測時点より前に確定している情報」でなければなりません。米国市場は日本より約14時間早く閉まるため、理論上はラグ−1（米国の前日データ）が翌日の日経を先行する可能性があります。CCFはこの時間的先行性を定量的に確認するツールです。
+
+**結果の解釈**
+
+- **負のラグでピーク（例：lag = −1）**: その指標は日経より1日先に動く → 翌日予測に使える
+- **正のラグでピーク（例：lag = +1）**: 日経が先行、指標は遅行 → 予測には使えない
+- **lag = 0 でピーク**: 同日に動く → 当日の情報が確定してからしか使えない
+
+実用上は lag −1 と −2 に注目（市場オープン前に入手可能な情報）。
+
+---
+
+#### 手法3：ローリング相関 (Rolling Correlation, 60日窓)
+
+**手法の説明**
+
+直近60営業日（約3ヶ月）のウィンドウでスライドしながら相関を計算し、相関関係が時間とともにどのように変化するかを可視化します。
+
+**なぜこの手法を選ぶか**
+
+相関係数は「定常的な関係」を前提としますが、金融市場では危機時・政策変更時にこの関係が大きく変動します。静的な相関だけを見るとこの不安定性を見逃します。ローリング相関は「この特徴量は安定して使えるか、それとも局面依存か」を診断するツールです。
+
+**結果の解釈**
+
+- 時間を通じて安定：信頼性の高い特徴量候補
+- 危機時に符号が反転（例：2020年コロナショック）：局面によって使い方を変える必要がある → 体制（レジーム）認識モデルを検討
+- 相関が弱まっていく：その関係は消滅しつつある可能性がある
+
+---
+
+#### 手法4：相互情報量 (Mutual Information, MI)
+
+**手法の説明**
+
+ピアソン相関が捉えられない**非線形な依存関係**も含めた統計的依存性の総量を0以上の値で表します。値が大きいほど、その指標は（線形・非線形問わず）日経のリターンと情報を共有しています。
+
+**なぜこの手法を選ぶか**
+
+株式市場では「RSIが30以下のときだけ反発しやすい」といった非線形な関係が存在します。これはピアソン相関では |r| ≈ 0 に見えても、相互情報量は高く評価します。MI >> |ピアソン r| のギャップが大きい特徴量は「Ridgeでは捉えられないが、XGBoostなら活用できる」シグナルを持つと解釈できます。
+
+**結果の解釈**
+
+- MI = 0: 完全に独立（線形・非線形ともに無関係）
+- MI が高い: 強い依存関係あり（线形 or 非線形）
+- |ピアソン r| との差が大きい: 非線形関係が存在する
+
+---
+
+#### 手法5：OLS回帰 + VIF (Multiple Regression + Variance Inflation Factor)
+
+**手法の説明**
+
+複数の指標を同時にコントロールした上での各指標の**限界的な寄与**を推定します（statsmodels OLS）。VIFは指標間の多重共線性（互いに強く相関していること）を診断します。
+
+**なぜこの手法を選ぶか**
+
+「S&P500と日経先物は両方とも日経と相関が高い」場合、一方が既に説明している分をコントロールして、もう一方がどれだけ追加情報を持つかを分離できるのがOLSです。また多重共線性が強い特徴量を機械学習モデルに入れると係数が不安定になるため、VIFで事前に診断します。
+
+**結果の解釈**
+
+| 指標 | 閾値 | 対処 |
+|------|------|------|
+| p値 | < 0.05 | 統計的に有意な係数 |
+| p値 | ≥ 0.05 | データからは確認できない — 必ずしも無意味ではないが慎重に |
+| R² | 高いほど良い | モデルが分散を説明している割合 |
+| VIF | > 10 | 深刻な多重共線性 — 共線している変数の一方を削除するか、Ridgeで正則化 |
+| VIF | 5–10 | 中程度の懸念 — 様子を見る |
+
+---
+
+#### 手法6：グレンジャー因果性検定 (Granger Causality Test)
+
+**手法の説明**
+
+「X の過去の値が、X 自身の過去を追加した場合に比べて、Y の予測精度を有意に改善するか」をF検定で評価します。ラグ1〜5で検定し、最小p値を採用します。
+
+**なぜこの手法を選ぶか**
+
+「相関はあっても予測に役立つか」を区別するための検定です。例えばゴールド価格と日経が相関していても、ゴールドが「先に動いて日経を予測できる」かどうかはグレンジャー検定で確認します。「グレンジャー因果性あり」は真の経済的因果関係ではなく「統計的な先行予測力」を意味します。
+
+**結果の解釈**
+
+| p値 | 解釈 |
+|-----|------|
+| < 0.01 | 強い予測的証拠 — 過去のXは日経予測に有意に貢献 |
+| < 0.05 | 統計的に有意 — 特徴量候補として採用 |
+| ≥ 0.05 | 有意なグレンジャー因果性なし |
+
+lag=1 の結果に最も注目（翌日予測への直接的な含意を持つ）。
+
+---
+
+#### 手法7：共和分検定 (Cointegration Test)
+
+**手法の説明**
+
+個別には非定常（ランダムウォーク）な2つの価格系列が「長期的な均衡関係」を共有するかどうかを検定します（Engle-Granger 検定）。多変量版のヨハンセン検定も実施します。
+
+**なぜこの手法を選ぶか**
+
+共和分が存在する場合、2系列は短期的に乖離しても長期的には元の関係に収束します。これは **平均回帰戦略** の統計的根拠となり、また VAR ではなく VECM（ベクトル誤差修正モデル）を用いるべき理論的根拠にもなります。
+
+**結果の解釈**
+
+- Engle-Granger p < 0.05: その指標と日経225は長期均衡を共有 → 平均回帰の可能性あり
+- Johansen rank > 0: 多変量系でも共和分関係あり → VECM が VAR より適切
+- rank = 0: 共和分なし → 対数リターン系列に VAR を適用するのが適切
+
+---
+
+#### 手法8：VAR / VECM (Vector Autoregression / Vector Error Correction Model)
+
+**手法の説明**
+
+複数の時系列変数を同時にモデル化し、互いの過去の値から将来を予測します。インパルス応答関数（IRF）で「S&P500にショックが起きたとき、日経はどのように反応するか」を可視化します。
+
+**なぜこの手法を選ぶか**
+
+日経単体の自己回帰（ARIMA）では「他の変数からの影響」を取り込めません。VARは複数変数の相互依存性を同時に推定できるため、マクロ変数の波及効果を分析するのに適しています。共和分がある場合はVECMに切り替えることで長期均衡への回帰力も組み込めます。
+
+**結果の解釈**
+
+- **IRF（インパルス応答）**: lag=1 で正の応答 → 前日のX上昇は翌日の日経上昇につながる傾向。符号と大きさが数ラグで消えていく場合は「短命な影響」、長く続く場合は「持続的な影響」
+- **AIC/BICによるラグ選択**: 情報量基準が最小になるラグ数を選択
+
+---
+
+#### 手法9：主成分分析 (PCA: Principal Component Analysis)
+
+**手法の説明**
+
+多数の相関した指標を、互いに直交する（無相関な）少数の主成分に圧縮します。各主成分がどの指標を反映しているかをローディングで確認します。
+
+**なぜこの手法を選ぶか**
+
+マクロ指標の多くは互いに高相関（米国株・日本株・先物など）で、そのまま全部モデルに入れると多重共線性の問題が発生します。PCAで冗長性を可視化し、少数の主成分で分散の80〜90%が説明できるかを確認します。また「どの指標が同じ因子（例：リスクオン/オフ）を反映しているか」という直感を得られます。
+
+**結果の解釈**
+
+- **PC1**: 通常はすべての資産が同方向に動く「市場ベータ」因子（株式一斉上昇・下落）
+- **PC2**: リスクオフ時の「株安・債券高・円高」のような逆向きの動き
+- 累積寄与率が少数PCで80%超 → 特徴量セットは高度に冗長 → PCA圧縮またはRidge正則化が有効
+
+**02ノートブックの最終出力**
+
+全分析を統合した特徴量ランキング（`output/reports/02_feature_ranking.csv`）。ピアソン相関・CCFピーク・ローリング相関・MIのランクを平均した複合スコアで上位10特徴量を次のノートブックに引き継ぎます。
+
+---
+
+### 03 — テクニカル指標 / Technical Indicators
+
+**何をするか**
+
+日経225のOHLCV（始値・高値・安値・終値・出来高）データから価格系列に内在するパターン（トレンド・モメンタム・ボラティリティ・出来高の力）をテクニカル指標として計算し、機械学習モデルに入力できる特徴量行列を構築します。**ルックアヘッドバイアスなし**（時刻tの指標で時刻t+1のリターンを予測）。
+
+---
+
+#### 移動平均 (SMA / EMA)
+
+**手法の説明**
+
+- **SMA（単純移動平均）**: 過去N日の終値の算術平均。SMA5/10/20/50/75/200を計算。
+- **EMA（指数移動平均）**: 直近の値に指数関数的に大きい重みをつける移動平均。直近の変化に素早く反応する。
+
+**特徴量への変換**: 生の価格水準ではなく `Close / SMA_N − 1`（移動平均からの乖離率）として使用。スケール不変になり異なる時期のデータを比較できる。
+
+**なぜ選ぶか**: ゴールデンクロス（短期MAが長期MAを上抜け）・デッドクロス（逆）はトレーダーが注目するシグナルであり、自己実現的な予測力を持つ可能性がある。
+
+**結果の解釈**
+
+- `Close / SMA_200 > 1`: 長期上昇トレンド中
+- `SMA_5 > SMA_20 > SMA_50`: 短・中・長期すべて上昇 → 強い上昇トレンド
+- 移動平均が収束（SMA_20 ≈ SMA_50）: トレンドの転換点の可能性
+
+---
+
+#### ボリンジャーバンド (Bollinger Bands)
+
+**手法の説明**
+
+20日SMAを中心に、±2標準偏差の上限・下限バンドを描きます。`%B = (Close − 下限) / (上限 − 下限)` で価格のバンド内位置を0〜1で表します。バンド幅は現在のボラティリティを示します。
+
+**なぜ選ぶか**: ボラティリティが自動的に帯域幅に反映されるため、相場環境に合わせた動的なサポート・レジスタンスとして機能します。「スクイーズ（バンド収縮）後のブレイクアウト」は代表的なシグナルパターンです。
+
+**結果の解釈**
+
+| %B の値 | 解釈 |
+|---------|------|
+| > 1.0 | 上限バンドを超過 → 過熱感あり |
+| = 0.5 | 中心線（20日SMA）付近 |
+| < 0.0 | 下限バンドを下回る → 売られすぎの可能性 |
+
+- バンド幅が拡大: ボラティリティが高まっている（大きな動きの予兆）
+- バンド幅が収縮（スクイーズ）: ボラティリティが圧縮 → ブレイクアウトが近い可能性
+
+---
+
+#### RSI (Relative Strength Index)
+
+**手法の説明**
+
+過去14日間の上昇幅合計と下落幅合計の比率から算出した0〜100のオシレーター。「この銘柄は短期的に買われすぎか、売られすぎか」を示します。RSI_9（短期）とRSI_14（標準）の両方を計算します。
+
+**なぜ選ぶか**: 価格変動の速度（モメンタム）を定量化し、反転しやすいゾーン（30以下・70以上）を識別します。移動平均がトレンドの方向を示すのに対し、RSIはトレンドの「疲れ」を示します。
+
+**結果の解釈**
+
+| RSI の値 | シグナル |
+|----------|---------|
+| > 70 | 過買い（Overbought）— 反落の可能性 |
+| 50–70 | 強気モメンタム継続 |
+| 30–50 | 弱気モメンタム |
+| < 30 | 過売り（Oversold）— 反発の可能性 |
+
+上昇トレンド中に RSI が 50 を割らない → トレンドが強い証拠。RSI がピーク更新しているのに価格がピーク更新できない（弱気ダイバージェンス）→ 反転警戒。
+
+---
+
+#### MACD (Moving Average Convergence Divergence)
+
+**手法の説明**
+
+EMA(12) − EMA(26) = MACDライン、MACDのEMA(9) = シグナルライン、その差 = MACDヒストグラム。ヒストグラムは「モメンタムの加速・減速」をゼロ基準で表します。
+
+**なぜ選ぶか**: 単純な移動平均クロスより感度が高く、トレンドの転換を早期にキャッチしやすい。ヒストグラムは「方向性」と「勢い」を同時に示し、機械学習モデルの入力として非常に情報量が多い。
+
+**結果の解釈**
+
+| ヒストグラムの状態 | 解釈 |
+|------------------|------|
+| 正 かつ 拡大 | 強気モメンタム加速 |
+| 正 かつ 縮小 | 強気モメンタム減衰 → 反転注意 |
+| 負 かつ 縮小（0に近づく） | 弱気モメンタム減衰 → 反発可能性 |
+| 負 かつ 拡大（より負に） | 弱気モメンタム加速 |
+
+---
+
+#### 出来高指標 (Volume Indicators)
+
+**手法の説明**
+
+- **出来高比率 (Volume Ratio)**: 当日出来高 / 20日平均出来高。1.0 = 平常、> 1.5 = 高出来高。
+- **OBV (On-Balance Volume)**: 上昇日に出来高を加算、下落日に減算した累積指標。価格変動の「確信度」を測ります。
+
+**なぜ選ぶか**: 「価格変動に出来高が伴っているか」は動きの信頼性を示す重要な情報です。出来高を伴わない急騰は継続しにくい、という市場の経験則をモデルに組み込みます。
+
+**結果の解釈**
+
+| 出来高比率 | 解釈 |
+|-----------|------|
+| > 1.5 | 高確信の動き — 継続しやすい |
+| 0.8–1.2 | 通常 |
+| < 0.5 | 低参加 — 動きが継続しない可能性 |
+
+価格上昇 + OBV 上昇 → 強気の確認。価格上昇 + OBV 下落（ダイバージェンス）→ 弱気の警告。
+
+---
+
+#### ATR (Average True Range)
+
+**手法の説明**
+
+「真の値幅（高値−安値、前日終値−高値、前日終値−安値の最大値）」の14日平均。`ATR% = ATR / Close × 100` で終値に対する割合として正規化します。
+
+**なぜ選ぶか**: 現在のボラティリティ「レジーム」を定量化します。ボラティリティが高い局面ではモデルの予測精度が低下することが多く、ATRはその局面を識別するメタ特徴量として機能します。
+
+**結果の解釈**
+
+- ATR% < 0.5%: 低ボラティリティ（穏やかな相場）
+- ATR% > 1.5%: 高ボラティリティ（急変動の局面）— モデル予測の信頼性が低下しやすい、ポジションサイズを縮小すべき局面
+
+---
+
+#### ストキャスティクス (Stochastic Oscillator)
+
+**手法の説明**
+
+「現在の終値が過去14日間の高値−安値レンジのどの位置にあるか」を0〜100で表した短期モメンタム指標。%K（高速線）と%D（%Kの3日SMA、低速線）の2本を計算します。
+
+**なぜ選ぶか**: RSIと補完的な役割を持ち、特に短期的な反転点の識別に優れます。%Kが%Dを上抜ける（ゴールデンクロス）・下抜ける（デッドクロス）がエントリー/エグジットシグナルとして広く使われます。
+
+**結果の解釈**
+
+- %K > 80: 過買い
+- %K < 20: 過売り
+- %K が %D を上抜け（20以下から）: 強気の転換シグナル
+- %K が %D を下抜け（80以上から）: 弱気の転換シグナル
+
+---
+
+### 04 — 機械学習モデル / Modeling
+
+**何をするか**
+
+03ノートブックで作成したテクニカル特徴量行列を使い、翌日の日経平均対数リターンを予測するモデルを訓練・評価します。時系列スプリットによるウォークフォワード検証で、データリーケージなしに汎化性能を測定します。
+
+---
+
+#### モデル1：Ridge回帰 (Ridge Regression)
+
+**手法の説明**
+
+通常のOLS回帰に L2 正則化項 λΣβ² を加えたモデル。係数を0方向に縮小することで多重共線性（移動平均同士の高相関）が係数の不安定化を招く問題を抑制します。αはTimeSeriesSplitでチューニングします。
+
+**なぜ選ぶか**: テクニカル指標（特に複数の移動平均）は互いに高相関で多重共線性が発生しやすいため、単純なOLSでは係数が不安定になります。Ridgeはこれを解決しながら線形モデルの解釈性（係数 = 各特徴量の重み）を保持します。また「どの特徴量が予測に効いているか」を係数の大きさで直接読み取れます。
+
+**結果の解釈**: 係数の絶対値が大きい特徴量ほど予測への寄与が大きい。正の係数 = その特徴量が増えると翌日リターンも上昇方向に予測される。負の係数 = 逆。
+
+---
+
+#### モデル2：XGBoost
+
+**手法の説明**
+
+勾配ブースティング木のアンサンブルモデル。複数の決定木を順番に訓練し、前の木の誤差を次の木が修正していきます。early stoppingでオーバーフィッティングを抑制します。
+
+**なぜ選ぶか**: 「RSIが30以下のとき、かつ出来高比率が1.5以上のとき、翌日は反発しやすい」といった**特徴量間の交互作用**や非線形関係を自動的に学習できます。これはRidgeでは表現できない関係です。また特徴量重要度でどの指標が効いているかをモデルから逆算できます。
+
+**結果の解釈**:
+
+- 特徴量重要度が高い指標 = 予測における情報量が多い
+- XGBoostの重要度スコアはモデルが各特徴量をどれだけ分岐（スプリット）に使ったかを反映
+
+---
+
+#### 評価指標 (Evaluation Metrics)
+
+すべてのモデルをナイーブベースライン（常に0を予測）と比較します。
+
+| 指標 | 定義 | 解釈のポイント |
+|------|------|--------------|
+| RMSE | √mean((y − ŷ)²) | 対数リターン単位（例: 0.008 ≈ 0.8%の誤差）。ベースラインRMSEを超えないモデルは価値なし |
+| 方向的中率 | sign(ŷ) == sign(y) の割合 | 50% = ランダム。52〜54% = 低コスト取引なら使える水準。55%超 = 強いシグナル |
+| シャープレシオ | mean(sign(ŷ)×y) / std(×y) × √252 | 予測シグナルに基づくL/S戦略の年率リスク調整リターン。1.0超 = 良好。※取引コストなし |
+
+**バックテスト（ノートブック04）**
+
+累積対数リターンでRidge・XGBoost・バイ&ホールドを比較します。モデルが市場の方向性を一貫して予測できているかを視覚的に確認します。
+
+---
+
+### 05 — フーリエ解析 / Fourier Analysis
+
+**何をするか**
+
+FFT（高速フーリエ変換）を用いて日経平均終値の**周期的パターン**を周波数ドメインで分解し、支配的な周期成分を抽出して将来に外挿することで価格予測を試みます。このノートブックは**教育目的**であり、FFTによる株価予測の限界も詳細に論じます。
+
+---
+
+#### フーリエ変換 (FFT)
+
+**手法の説明**
+
+任意の時系列は正弦波の重ね合わせで表現できる（フーリエ定理）という考えに基づき、価格系列を周波数成分に分解します。振幅が大きい周波数 = その周期での変動が強い。
+
+手順:
+1. **線形デトレンド**: 長期的な上昇トレンドを除去してから分析（でないとFFTがトレンドを周期成分と混同する）
+2. **np.fft.rfft**: デトレンド系列を周波数ドメインに変換
+3. **上位K成分の抽出**: 振幅上位K個の周波数成分だけを残す
+4. **逆FFT**: K成分で元の価格を再構成（ノイズ除去効果）
+5. **未来への延長**: K成分を t > N に外挿して予測
+
+**なぜこの手法を選ぶか**: 「月末効果」「年度末効果」「半年サイクル」などの季節性パターンの**仮説生成ツール**として有用。また信号処理の視点から金融データを理解するための教育的価値が高い。
+
+**結果の解釈**
+
+- **振幅スペクトル**: どの周期（1ヶ月・3ヶ月・1年など）の成分が強いか
+- **K値の影響**: K小 = 平滑化（情報損失）、K大 = 元の価格に近づく（過学習）。バックテストでKを変化させて最適値を探す
+- **R²**: 上位K成分での再構成精度。K=10 でも R² が低ければ価格変動はほぼランダムに近い
+- **バックテスト指標**: 方向的中率 ≈ 0.50 → FFTは予測ツールとして機能していない（後述の限界に合致）
+
+**FFTによる株価予測の限界**
+
+1. **非定常性**: 株価の周期の強さ・位相は時間とともに変化するが、FFTは系列が定常であることを前提とする
+2. **効率的市場仮説**: 知られた周期性パターンは裁定によって自己消滅する傾向がある
+3. **低S/N比**: 日次リターンのノイズが非常に大きく、FFTが検出する「周期」の多くはノイズの偶然的な構造である
+4. **外生ショック**: 金融政策・地政学リスクなどの構造的変化はサイン波で表現できない
+
+**FFTが実際に役立つ場面**: ノイズ除去と可視化、季節性の仮説生成、ボラティリティ分析の動機付け
+
+---
+
+### 06 — ADR騰落率による日経225予測 / ADR-based Prediction
+
+**何をするか**
+
+日本時間**午前8時（米国市場クローズ後）**に入手可能な情報（ADR終値・米国指数・USDJPY）を使って、同日の日経225の「始値リターン・終値リターン・場中リターン」を予測します。
+
+---
+
+#### タイムラインの論理
 
 ```
-Local (edit notebooks / src)
-    └─► git push to GitHub
-            └─► Google Colab (pull & run)
+月曜 US市場クローズ (4PM ET = 火曜 6AM JST)
+        ↓ 6時〜9時の間に ADR・USDJPY・米国指数が確定
+火曜 東証オープン (9AM JST)
 ```
 
-### Running on Google Colab
+US日付Tのデータ（ADR・US指数）を**+1営業日シフト**して日本日付T+1の特徴量として使用。
 
-1. Open [Google Colab](https://colab.research.google.com/)
-2. `File` → `Open notebook` → `GitHub` tab
-3. Enter `https://github.com/Takumi-Itokawa-Finance/Nikkei_Analysis`
-4. Select the target notebook and open it
-5. Run **Cell 0** (environment setup) — this will:
-   - `git clone` the repository to `/content/Nikkei_Analysis/`
-   - Mount Google Drive and link `data/` for persistence
-   - Install required libraries
+---
 
-### Data Persistence
+#### 予測対象の設計
 
-`data/` is excluded from git and stored in Google Drive:
+| ターゲット | 計算式 | 意味 | 予測難易度 |
+|------------|--------|------|-----------|
+| `open_ret` | open_t / close_{t-1} − 1 | 前日比ギャップアップ/ダウン | **最も高精度** |
+| `close_ret` | close_t / close_{t-1} − 1 | 丸一日のリターン | 中程度 |
+| `intraday_ret` | close_t / open_t − 1 | 開場後の動き | **最も難しい** |
+
+この3つを同時に予測することで「一夜の情報（ADR）は始値にどこまで織り込まれ、残りはノイズか」という効率的市場仮説の検証にもなります。
+
+---
+
+#### 手法1：ルールベース合成日経 (Price-Weight Synthesis)
+
+**手法の説明**
+
+日経225はプライスウェイト方式（ダウ平均と同じ構造）のため、各銘柄の前日株価を重みとして ADR の JPY 換算リターンを加重平均することで、理論的な日経リターンを近似します。
+
+$$\hat{r}_{\text{Nikkei}} = \sum_i w_i \cdot r_i^{\text{ADR(JPY)}}, \quad w_i = \frac{P_i^{\text{prev}}}{\sum_j P_j^{\text{prev}}}$$
+
+ADR は USD 建てなので、`ADR リターン (JPY) = ADR リターン (USD) + USDJPY リターン` で換算します。
+
+**なぜ選ぶか**: 日経225の算出方法に忠実なアプローチ。市場の仕組みを直接反映するため、ブラックボックスではなく完全に解釈可能です。
+
+**結果の解釈**: 相関・方向的中率が高い → ADRが日経の価格形成に直接影響している。`open_ret` への精度が高く `intraday_ret` への精度が低い → 「ADR情報は始値に効率的に織り込まれ、場中はノイズ主体」という効率的市場仮説と整合します。
+
+---
+
+#### 手法2：回帰モデル (Ridge + XGBoost)
+
+**手法の説明**
+
+ADR リターン（10銘柄）＋ 米国マクロ指標（S&P500・NASDAQ・VIX・USDJPY）を特徴量に、TimeSeriesSplitで評価します。Ridgeは線形・係数解釈可能、XGBoostは非線形・交互作用を捉えます。
+
+**なぜ選ぶか**: ルールベースが「価格ウェイト」という固定の理論値でウェイトを決めるのに対し、回帰モデルは過去の実績データからウェイトを統計的に最適化します。またマクロ指標（VIX・NASDAQ）のような非ADR情報も組み込めます。
+
+**結果の解釈（特徴量重要度）**
+
+- Ridge係数が大きい ADR → 統計的に日経に強く連動してきた銘柄
+- VIX の係数が負で大きい → 恐怖指数が高い日は日経が下落しやすい
+- XGBoost 重要度で USDJPY が上位 → 為替変動が日経の開き（gap）を左右している
+
+---
+
+### 07 — OLS係数モデル / ADR Coefficient Model
+
+**何をするか**
+
+06ノートブックの「ルールベース（理論ウェイト）」を発展させ、**最小二乗法（OLS）で各ADRの実効的なウェイトを実績データから統計的に推定**します。プライスウェイトと OLS 係数を比較することで「理論と実態の乖離」を定量化します。
+
+---
+
+#### OLS係数モデル
+
+**手法の説明**
+
+$$\hat{r}_{\text{Nikkei, open}} = \beta_0 + \sum_{i=1}^{N} \beta_i \cdot r_i^{\text{ADR(JPY)}} + \varepsilon$$
+
+statsmodels の OLS で係数を推定し、t統計量・p値・R² を確認します。
+
+**モデルA（ADRのみ）** と **モデルB（ADR＋マクロ）** を比較することで、マクロ指標が ADR の説明を超えた追加情報を持つかを検証します。
+
+**なぜ選ぶか**: ルールベースのプライスウェイトは「日経の構造上の重み」ですが、OLS 係数は「実際の市場で観測されたリターンの連動性」を反映します。このギャップは「価格シェアは大きいが意外と日経を動かさない銘柄」や「シェアは小さいが強く連動する銘柄」を明らかにします。
+
+**結果の解釈**
+
+- **R² (in-sample)**: ADRだけで始値リターンの分散をどれだけ説明できるか。例: R²=0.4 なら40%が説明可能
+- **有意な係数（p < 0.05）**: そのADRは統計的に意味のある予測因子
+- **プライスウェイト vs OLS正規化係数の比較**:
+  - OLS > プライスウェイト → その銘柄は価格シェア以上に情報を持つ
+  - OLS < プライスウェイト → 価格シェアは大きいが意外と連動しない
+
+**アウトオブサンプル評価**
+
+直近252日をテストセットとしてOLSをホールドアウト評価します。`Idea 1（ルールベース）` との比較でOLSの優位性・限界を確認します。
+
+**OLSの限界と対処法**
+
+| 限界 | 原因 | 対処 |
+|------|------|------|
+| 多重共線性 | ADR同士（同セクター）の相関が高い | Ridge回帰（ノートブック04・06） |
+| 係数の時間変動 | 市場環境（リスクオン/オフ）によってβが変化 | ローリングOLS（252日窓） |
+| 非線形関係 | 急落時の挙動が平常時と異なる | XGBoost（ノートブック06） |
+| カバレッジ | 上位10銘柄のみ（日経全体の約60〜70%） | SP500/NASDAQで補完（モデルB） |
+
+---
+
+### 08 — 終値予測と予測区間 / Close Price Prediction with Prediction Interval
+
+**何をするか**
+
+02〜07のすべての分析知見を統合し、**テクニカル指標 + ADR騰落率 + 米国マクロ指標** の3カテゴリの特徴量（合計20本超）を使って当日の日経225**終値リターンと90%予測区間**を出力します。実際の運用ユースケース（「今日の終値はどのくらいになりそうか」）を直接出力する実用系ノートブックです。
+
+---
+
+#### 統合特徴量の設計
+
+| カテゴリ | 特徴量 | 利用可能時刻 |
+|----------|--------|-------------|
+| テクニカル（前日確定） | RSI・MACD_hist・BB位置・短中期モメンタム・出来高比率 | 前日終了後 |
+| ADR（8時確定） | 10銘柄 JPY換算リターン | 8:00 JST |
+| 米国マクロ（8時確定） | SP500・NASDAQ・VIX・USDJPY騰落率 | 8:00 JST |
+
+すべて**寄り付き（9:00 JST）前**に入手可能な情報のみを使用。ルックアヘッドバイアスなし。
+
+---
+
+#### OLS + 予測区間 (Prediction Interval)
+
+**手法の説明**
+
+statsmodels の OLS を使い、`get_prediction().summary_frame(alpha=0.10)` で**90%予測区間**を計算します。
+
+**信頼区間 vs 予測区間の違い（重要）**
+
+| 区間の種類 | 意味 | 幅 |
+|-----------|------|----|
+| 信頼区間（Confidence Interval） | 母平均（期待リターン）の不確実性 | 狭い |
+| **予測区間（Prediction Interval）** | **次の1点**（実際の価格）が入る範囲 | 広い |
+
+株価予測の実用目的では「次の1日の価格がどの範囲に入るか」を知りたいため、**予測区間を使用します**。
+
+**なぜOLSを選ぶか**: 機械学習モデル（XGBoost等）は予測区間の計算が非自明ですが、OLSは統計理論から直接予測区間を導出できます。解釈性と不確実性の定量化が同時に得られます。
+
+**結果の解釈**
+
+```
+=== 日経225終値予測（YYYY-MM-DD）===
+前日終値:    XX,XXX 円
+予測終値:    XX,XXX 円  (+X.XX%)
+
+90% 予測区間:
+  下限 ( 5%): XX,XXX 円
+  中央 (50%): XX,XXX 円
+  上限 (95%): XX,XXX 円
+```
+
+- 予測区間が広い（上下±2,000円以上）: 特徴量がその日の不確実性を高いと評価している
+- 予測区間が狭い: モデルが比較的確信を持って予測している局面
+
+---
+
+#### 予測区間のバックテスト（カバレッジ確認）
+
+**手法の説明**
+
+直近252日のテストセットで「実績値が90%予測区間に収まった割合（カバレッジ率）」を計算します。
+
+**なぜ重要か**: 理論通りなら約90%のカバレッジが期待されます。カバレッジが80%を大幅に下回る場合、モデルが不確実性を過小評価しています（実際の予測区間はモデルが言うより広い）。カバレッジが正確であることは「予測区間を信頼してよいか」の根拠になります。
+
+**結果の解釈**
+
+- カバレッジ ≈ 90%: 予測区間が適切に校正されている
+- カバレッジ << 90%（例: 70%）: モデルは不確実性を過小評価 → より広い区間が必要
+- カバレッジ >> 90%（例: 98%）: 保守的すぎる区間（あまり問題ではないが情報量が少ない）
+
+---
+
+## 分析パイプライン全体像
+
+```
+01_data_exploration
+    └─► データ可用性確認・close_all.csv 作成
+            └─► 02_correlation
+                    └─► 9手法で特徴量ランキング作成
+                            └─► 03_technical
+                                    └─► テクニカル指標計算・特徴量行列作成
+                                            └─► 04_modeling
+                                                    └─► Ridge / XGBoost 訓練・評価
+
+05_fourier   ─── 周期性の探索（独立・教育目的）
+
+06_adr_prediction
+    └─► ADR×日時シフト → 始値/終値/場中リターン予測
+            └─► 07_adr_coefficients
+                    └─► OLS係数でウェイト最適化 → 価格ウェイトとの比較
+                            └─► 08_close_prediction
+                                    └─► 統合モデル（Tech + ADR + Macro）→ 終値 + 予測区間
+```
+
+---
+
+## Google Colab での実行方法
+
+1. [Google Colab](https://colab.research.google.com/) を開く
+2. `File` → `Open notebook` → `GitHub` タブ
+3. `https://github.com/Takumi-Itokawa-Finance/Nikkei_Analysis` を入力
+4. 対象ノートブックを選択
+5. **Cell 0**（環境セットアップ）を実行 → リポジトリのクローン・Google Driveのマウント・パッケージインストールが自動で行われる
+
+### データの永続化
+
+`data/` は git 管理外で Google Drive に保存されます：
 
 ```
 MyDrive/
 └── Nikkei_Analysis/
     └── data/
-        ├── raw/
-        └── processed/
+        ├── raw/       ← 01 が生成
+        └── processed/ ← 03 が生成
 ```
-
-The setup cell in each notebook creates this structure automatically on first run.
-
-### Updating Code
-
-```bash
-# After editing locally
-git add .
-git commit -m "your message"
-git push origin main
-```
-
-In Colab, re-run **Step 2** (which runs `git pull`) to pick up the latest changes.
-Note: the notebook cells themselves are cached by Colab — reopen the notebook from GitHub
-if cell-level changes need to take effect.
 
 ---
 
-## Tech Stack
-
-| Category | Libraries |
-|----------|-----------|
-| Data fetching | `yfinance`, `stooq` (direct CSV for JGB) |
-| Data processing | `pandas`, `numpy` |
-| Technical indicators | `pandas-ta` |
-| Statistical analysis | `statsmodels`, `scipy` |
-| Visualization | `matplotlib`, `seaborn`, `plotly` |
-| Machine learning | `scikit-learn`, `xgboost`, `lightgbm` |
-| Time series models | `statsmodels` (ARIMA / VAR) |
-| Deep learning | `tensorflow` / `pytorch` |
-| Feature importance | `shap` |
-
----
-
-## Setup (local)
+## ローカルセットアップ
 
 ```bash
 git clone https://github.com/Takumi-Itokawa-Finance/Nikkei_Analysis.git
@@ -153,158 +716,20 @@ pip install -r requirements.txt
 
 ---
 
-## Analysis Pipeline
+## 技術スタック
 
-```
-Data fetching
-    └─► Preprocessing & feature engineering
-            └─► Correlation & regression analysis (OLS / Granger / VAR)
-                    └─► Model training (linear / boosting / LSTM)
-                            └─► Evaluation & backtesting → output/
-```
-
----
-
-## How to Interpret Results
-
-### 02 — Correlation & Statistical Analysis
-
-#### Pearson Correlation (log returns)
-| Range | Interpretation |
-|-------|----------------|
-| \|r\| > 0.7 | Strong linear relationship |
-| 0.3 < \|r\| < 0.7 | Moderate — worth investigating |
-| \|r\| < 0.3 | Weak — likely not useful alone |
-
-> Computed on **log returns**, not price levels, to avoid spurious correlation from shared trends.
-
-#### Lag Correlation (CCF)
-- Peak at **negative lag** (e.g. lag −1): the indicator leads Nikkei → potentially actionable for prediction
-- Peak at **positive lag**: the indicator lags Nikkei → reactive, not useful for forecasting
-- Practical focus: lag −1 and −2 (data available before next Japan open)
-
-#### Rolling Correlation (60-day window)
-- Stable over time → reliable feature
-- Correlation flipping sign during crises → use with caution; consider regime-aware models
-
-#### Mutual Information
-- 0 = no dependency (linear or non-linear)
-- Higher = stronger dependency
-- If MI >> |Pearson r|: non-linear relationship exists that Ridge will miss (use XGBoost)
-
-#### OLS Regression + VIF
-| Metric | Threshold | Action |
-|--------|-----------|--------|
-| p-value | < 0.05 | Statistically significant coefficient |
-| R² | higher = better | Fraction of variance explained |
-| VIF | > 10 | Severe multicollinearity — drop one of the correlated features |
-| VIF | 5–10 | Moderate concern — monitor |
-
-#### Granger Causality
-| p-value | Interpretation |
-|---------|----------------|
-| < 0.05 | Past values of X improve prediction of Nikkei (beyond Nikkei's own past) |
-| < 0.01 | Strong predictive evidence |
-| ≥ 0.05 | No significant Granger causality |
-
-> Focus on **lag 1** results — these are most actionable for next-day prediction.
-
-#### Cointegration
-- Engle–Granger p < 0.05: the pair shares a long-run equilibrium → mean-reversion strategies may apply
-- Johansen rank > 0: at least one cointegrating relationship among the multivariate set
-
-#### VAR Impulse Response
-- Positive IRF at lag 1: a shock in X leads to a same-direction move in Nikkei next day
-- Sign and magnitude decay after a few lags → short-lived vs persistent effects
-
-#### PCA
-- **PC1** typically captures market beta (all assets rising/falling together)
-- **PC2** often captures risk-off dynamics (equities down, bonds/JPY up)
-- Cumulative explained variance > 80% with few PCs → feature set is highly redundant
+| カテゴリ | ライブラリ |
+|----------|-----------|
+| データ取得 | `yfinance`, `stooq` (JGB直接CSV) |
+| データ処理 | `pandas`, `numpy` |
+| テクニカル指標 | `pandas-ta`, 独自実装 |
+| 統計解析 | `statsmodels`, `scipy` |
+| 可視化 | `matplotlib`, `seaborn` |
+| 機械学習 | `scikit-learn`, `xgboost` |
+| 特徴量選択 | `sklearn.feature_selection` (Mutual Information) |
 
 ---
 
-### 03 — Technical Indicators
+## 免責事項
 
-#### RSI (Relative Strength Index, 0–100)
-| Level | Signal |
-|-------|--------|
-| > 70 | Overbought — potential downward reversal |
-| 50–70 | Bullish momentum |
-| 30–50 | Bearish momentum |
-| < 30 | Oversold — potential upward reversal |
-
-#### Bollinger Bands
-| Metric | Interpretation |
-|--------|----------------|
-| %B > 1.0 | Price above upper band — stretched to the upside |
-| %B = 0.5 | Price at mid band (20-day SMA) |
-| %B < 0.0 | Price below lower band — stretched to the downside |
-| BB Width increasing | Volatility expanding (often precedes a large move) |
-| BB Width contracting | Volatility compressing (squeeze — breakout may follow) |
-
-#### MACD Histogram
-| Value | Interpretation |
-|-------|----------------|
-| Positive and growing | Bullish momentum strengthening |
-| Positive and shrinking | Bullish momentum fading |
-| Negative and shrinking (toward 0) | Bearish momentum fading — potential reversal |
-| Negative and growing (more negative) | Bearish momentum strengthening |
-
-#### Stochastic Oscillator (%K, 0–100)
-| Level | Signal |
-|-------|--------|
-| %K > 80 | Overbought |
-| %K < 20 | Oversold |
-| %K crosses above %D | Bullish signal |
-| %K crosses below %D | Bearish signal |
-
-#### ATR % (ATR / Close × 100)
-- Low ATR% (< 0.5%): quiet, low-volatility regime
-- High ATR% (> 1.5%): elevated volatility — model predictions are less reliable; position sizing should be reduced
-
-#### Volume Ratio (Volume / 20-day avg)
-| Ratio | Interpretation |
-|-------|----------------|
-| > 1.5 | High conviction — move more likely to continue |
-| 0.8–1.2 | Normal |
-| < 0.5 | Low participation — move may lack follow-through |
-
----
-
-### 04 — Model Evaluation
-
-#### RMSE
-- Measured in log-return units (e.g. 0.008 ≈ 0.8% daily error)
-- Compare against the **naive baseline RMSE** (always predicting 0): if your model's RMSE is similar, it adds no value
-- Lower is better, but RMSE alone does not indicate profitability
-
-#### Directional Accuracy
-| Value | Interpretation |
-|-------|----------------|
-| 50% | No better than random |
-| 52–54% | Modest edge — potentially profitable with low transaction costs |
-| > 55% | Strong signal |
-
-> In practice, 52%+ sustained over the test period is considered meaningful for daily equity prediction.
-
-#### Sharpe Ratio (annualised, long/short signal strategy)
-| Value | Interpretation |
-|-------|----------------|
-| < 0 | Strategy loses money — model's direction calls are counterproductive |
-| 0–0.5 | Marginally positive |
-| 0.5–1.0 | Acceptable |
-| > 1.0 | Good risk-adjusted return |
-| > 2.0 | Excellent (uncommon for pure technical signals) |
-
-> These Sharpe figures assume **no transaction costs**. Add at least 0.05–0.1% per round-trip for a realistic estimate.
-
----
-
-## Evaluation Metrics
-
-| Metric | Formula | Notes |
-|--------|---------|-------|
-| RMSE | √mean((y − ŷ)²) | Scale: log-return units |
-| Directional accuracy | mean(sign(ŷ) == sign(y)) | 50% = random baseline |
-| Sharpe ratio | mean(r) / std(r) × √252 | Annualised; r = signal × actual return |
+本プロジェクトは**教育・研究目的**です。すべての予測結果・分析は実際の投資判断に使用しないでください。株式市場には固有の不確実性があり、過去の統計的パターンが将来も持続する保証はありません。
